@@ -1,0 +1,16 @@
+node_modules
+dist
+.env
+.env.local
+.env.production
+.gcloud/
+.tools/
+.tmp/
+backups/
+coverage
+*.log
+*.tsbuildinfo
+*.tgz
+*.zip
+*.exe
+.DS_Store

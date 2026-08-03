@@ -1,0 +1,53 @@
+{
+	on_demand_tls {
+		ask http://api:4201/api/public/domains/authorize
+	}
+}
+
+(appointit_routes) {
+	encode zstd gzip
+
+	handle /api/vendors/events {
+		reverse_proxy api:4201 {
+			flush_interval -1
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy api:4201
+	}
+
+	handle /health {
+		reverse_proxy api:4201
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$APP_DOMAIN} {
+	import appointit_routes
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	import appointit_routes
+}

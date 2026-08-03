@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: appointit
+      POSTGRES_PASSWORD: appointit
+      POSTGRES_DB: appointit
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "16380:6379"
+
+  sms-gateway:
+    build:
+      context: .
+      dockerfile: sms-gateway/Dockerfile
+    environment:
+      SMS_GATEWAY_PORT: 4100
+      SMS_GATEWAY_API_KEY: change-me
+      SMS_GATEWAY_PROVIDER: mock
+      SMS_GATEWAY_SPOOL_DIR: /data/outbox
+      SMS_GATEWAY_LOG_FILE: /data/messages.jsonl
+    ports:
+      - "4100:4100"
+    volumes:
+      - sms-gateway-data:/data
+
+volumes:
+  postgres-data:
+  sms-gateway-data:

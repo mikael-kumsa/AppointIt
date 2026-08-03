@@ -1,0 +1,786 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  VENDOR_ADMIN
+  RECEPTIONIST
+  STAFF
+  CUSTOMER
+}
+
+enum VendorStatus {
+  PENDING_REVIEW
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+enum DomainStatus {
+  PENDING
+  ACTIVE
+  FAILED
+  DISABLED
+}
+
+enum PlanVersionStatus {
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentInvoiceStatus {
+  PENDING
+  SUBMITTED
+  PAID
+  REVIEW
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentSmsStatus {
+  RECEIVED
+  MATCHED
+  REVIEW
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  RESCHEDULED
+}
+
+enum AppointmentSource {
+  DASHBOARD
+  PUBLIC_BOOKING
+  WHATSAPP
+  TELEGRAM
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  TELEGRAM
+  EMAIL
+  SMS
+}
+
+enum LogStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+  READ
+}
+
+enum ReminderScheduleStatus {
+  SCHEDULED
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
+enum PhoneChallengePurpose {
+  PHONE_VERIFICATION
+  LOGIN_2FA
+}
+
+model User {
+  id           String   @id @default(cuid())
+  vendorId     String?
+  staffId      String?
+  customerId   String?
+  name         String
+  email        String   @unique
+  phone        String?
+  phoneVerifiedAt DateTime?
+  smsTwoFactorEnabled Boolean @default(false)
+  telegramVerifiedAt DateTime?
+  telegramUserId String?
+  telegramUsername String?
+  telegramName String?
+  passwordHash String
+  role         UserRole
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vendor   Vendor?   @relation(fields: [vendorId], references: [id])
+  staff    Staff?    @relation(fields: [staffId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  auditLogs AuditLog[]
+  staffInvitesAccepted StaffInvite[] @relation("AcceptedInviteUser")
+  refreshTokens AuthRefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  phoneVerificationSessions PhoneVerificationSession[]
+  activityNotificationReads ActivityNotificationRead[]
+}
+
+model AuthRefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Vendor {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  businessType String
+  description  String?
+  phone       String?
+  email       String?
+  phoneVerifiedAt DateTime?
+  telegramVerifiedAt DateTime?
+  telegramUserId String?
+  telegramUsername String?
+  telegramName String?
+  timezone    String       @default("Africa/Addis_Ababa")
+  status      VendorStatus @default(TRIAL)
+  settings    Json         @default("{}")
+  logoData    Bytes?
+  logoMimeType String?
+  logoUpdatedAt DateTime?
+  promoImageData    Bytes?
+  promoImageMimeType String?
+  promoImageUpdatedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  users                 User[]
+  branches              Branch[]
+  services              Service[]
+  staff                 Staff[]
+  customers             Customer[]
+  appointments          Appointment[]
+  reminderSchedules     ReminderSchedule[]
+  workingHours          WorkingHour[]
+  breakTimes            BreakTime[]
+  holidays              Holiday[]
+  messageSettings       MessageSetting?
+  messageTemplates      MessageTemplate[]
+  notificationLogs      NotificationLog[]
+  calendarConnections   CalendarConnection[]
+  calendarSyncLogs      CalendarSyncLog[]
+  webhookLogs           WebhookLog[]
+  auditLogs             AuditLog[]
+  telegramVerificationSessions TelegramVerificationSession[]
+  phoneVerificationSessions PhoneVerificationSession[]
+  staffInvites StaffInvite[]
+  customDomains VendorDomain[]
+  subscription VendorSubscription?
+  paymentInvoices PaymentInvoice[]
+  activityNotifications ActivityNotification[]
+}
+
+model SubscriptionPlan {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  description  String
+  displayOrder Int      @default(0)
+  active       Boolean  @default(true)
+  isPublic     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  versions PlanVersion[]
+
+  @@index([active, isPublic, displayOrder])
+}
+
+model PlanVersion {
+  id                  String            @id @default(cuid())
+  planId              String
+  version             Int
+  status              PlanVersionStatus @default(PUBLISHED)
+  currency            String            @default("ETB")
+  monthlyPriceCents   Int?
+  annualPriceCents    Int?
+  trialDays           Int               @default(0)
+  publishedAt         DateTime           @default(now())
+  createdAt           DateTime           @default(now())
+
+  plan          SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  entitlements  PlanEntitlement[]
+  subscriptions VendorSubscription[]
+  paymentInvoices PaymentInvoice[]
+
+  @@unique([planId, version])
+  @@index([planId, status])
+}
+
+model PlanEntitlement {
+  id            String @id @default(cuid())
+  planVersionId String
+  key           String
+  value         Json
+
+  planVersion PlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([planVersionId, key])
+  @@index([key])
+}
+
+model VendorSubscription {
+  id                     String             @id @default(cuid())
+  vendorId               String             @unique
+  planVersionId          String
+  status                 SubscriptionStatus @default(PENDING)
+  provider               String             @default("manual")
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  planVersion PlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+
+  @@index([planVersionId, status])
+}
+
+model PaymentInvoice {
+  id                   String               @id @default(cuid())
+  vendorId             String
+  planVersionId        String
+  accessTokenHash      String               @unique
+  amountCents          Int
+  currency             String               @default("ETB")
+  destinationPhone     String
+  status               PaymentInvoiceStatus @default(PENDING)
+  claimedTransactionId String?              @unique
+  submittedAt          DateTime?
+  paidAt               DateTime?
+  proofData             Bytes?
+  proofMimeType         String?
+  proofFileName         String?
+  proofUploadedAt       DateTime?
+  reviewNote            String?
+  reviewedAt            DateTime?
+  reviewedById          String?
+  expiresAt            DateTime
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  vendor          Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  planVersion     PlanVersion       @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  matchedSmsEvent TelebirrSmsEvent?
+
+  @@index([vendorId, status])
+  @@index([expiresAt])
+}
+
+model TelebirrSmsEvent {
+  id               String           @id @default(cuid())
+  sender           String
+  deviceId         String?
+  messageHash      String           @unique
+  encryptedMessage String
+  transactionId    String           @unique
+  amountCents      Int
+  currency         String           @default("ETB")
+  payerName        String
+  payerPhoneMasked String?
+  occurredAt       DateTime
+  receivedAt       DateTime         @default(now())
+  status           PaymentSmsStatus @default(RECEIVED)
+  matchedInvoiceId String?          @unique
+
+  matchedInvoice PaymentInvoice? @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([status, receivedAt])
+}
+
+model VendorDomain {
+  id                      String       @id @default(cuid())
+  vendorId                String
+  hostname                String       @unique
+  status                  DomainStatus @default(PENDING)
+  sslStatus               String       @default("pending")
+  provider                 String       @default("manual")
+  providerId               String?      @unique
+  cnameTarget              String
+  verificationRecords     Json         @default("[]")
+  isPrimary               Boolean      @default(true)
+  verifiedAt              DateTime?
+  lastCheckedAt           DateTime?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, status])
+}
+
+model PhoneVerificationSession {
+  id                     String   @id @default(cuid())
+  userId                 String
+  vendorId               String?
+  tokenHash              String   @unique
+  providerVerificationId String
+  phone                   String
+  purpose                 PhoneChallengePurpose @default(PHONE_VERIFICATION)
+  expiresAt               DateTime
+  resendAvailableAt      DateTime
+  attempts               Int      @default(0)
+  sendCount              Int      @default(1)
+  verifiedAt             DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor Vendor? @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([vendorId])
+  @@index([expiresAt])
+}
+
+model StaffInvite {
+  id             String    @id @default(cuid())
+  vendorId       String
+  staffId        String?
+  email          String
+  name           String
+  phone          String?
+  role           UserRole
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  acceptedUserId String?
+  createdAt      DateTime  @default(now())
+
+  vendor       Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  staff        Staff? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  acceptedUser User?  @relation("AcceptedInviteUser", fields: [acceptedUserId], references: [id])
+
+  @@index([vendorId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model TelegramVerificationSession {
+  id                    String   @id @default(cuid())
+  vendorId              String
+  userId                String?
+  stateHash             String   @unique
+  encryptedCodeVerifier String
+  nonceHash             String
+  expiresAt             DateTime
+  usedAt                DateTime?
+  createdAt             DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  vendorId  String
+  name      String
+  address   String
+  phone     String?
+  timezone  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor       Vendor        @relation(fields: [vendorId], references: [id])
+  staff        Staff[]
+  appointments Appointment[]
+  workingHours WorkingHour[]
+  breakTimes   BreakTime[]
+  holidays     Holiday[]
+
+  @@index([vendorId])
+}
+
+model Service {
+  id                 String   @id @default(cuid())
+  vendorId           String
+  name               String
+  description        String?
+  category           String?
+  priceCents         Int      @default(0)
+  durationMinutes    Int
+  bufferBeforeMinutes Int     @default(0)
+  bufferAfterMinutes  Int     @default(0)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  vendor       Vendor         @relation(fields: [vendorId], references: [id])
+  staff        StaffService[]
+  appointments Appointment[]
+
+  @@index([vendorId])
+}
+
+model Staff {
+  id        String   @id @default(cuid())
+  vendorId  String
+  branchId  String?
+  name      String
+  roleTitle String
+  phone     String?
+  email     String?
+  profileImageData Bytes?
+  profileImageMimeType String?
+  profileImageUpdatedAt DateTime?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor              Vendor               @relation(fields: [vendorId], references: [id])
+  branch              Branch?              @relation(fields: [branchId], references: [id])
+  userAccounts        User[]
+  services            StaffService[]
+  workingHours        WorkingHour[]
+  breakTimes          BreakTime[]
+  holidays            Holiday[]
+  appointments        Appointment[]
+  calendarConnections CalendarConnection[]
+  invites             StaffInvite[]
+
+  @@index([vendorId])
+}
+
+model StaffService {
+  staffId   String
+  serviceId String
+
+  staff   Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+}
+
+model WorkingHour {
+  id        String   @id @default(cuid())
+  vendorId  String
+  branchId  String?
+  staffId   String?
+  weekday   Int
+  startTime String
+  endTime   String
+
+  vendor Vendor  @relation(fields: [vendorId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+  staff  Staff?  @relation(fields: [staffId], references: [id])
+
+  @@index([vendorId, weekday])
+}
+
+model BreakTime {
+  id        String @id @default(cuid())
+  vendorId  String
+  branchId  String?
+  staffId   String?
+  weekday   Int
+  startTime String
+  endTime   String
+
+  vendor Vendor  @relation(fields: [vendorId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+  staff  Staff?  @relation(fields: [staffId], references: [id])
+}
+
+model Holiday {
+  id       String   @id @default(cuid())
+  vendorId String
+  branchId String?
+  staffId  String?
+  date     DateTime
+  reason   String?
+
+  vendor Vendor  @relation(fields: [vendorId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+  staff  Staff?  @relation(fields: [staffId], references: [id])
+}
+
+model Customer {
+  id                String    @id @default(cuid())
+  vendorId          String
+  name              String
+  phone             String
+  email             String?
+  smsOptIn          Boolean   @default(false)
+  whatsappOptIn     Boolean   @default(false)
+  telegramId        String?
+  notes             String?
+  noShowCount       Int       @default(0)
+  lastAppointmentAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  vendor       Vendor        @relation(fields: [vendorId], references: [id])
+  userAccounts User[]
+  appointments Appointment[]
+  notificationLogs NotificationLog[]
+
+  @@unique([vendorId, phone])
+  @@index([vendorId])
+}
+
+model Appointment {
+  id                    String            @id @default(cuid())
+  vendorId              String
+  branchId              String
+  serviceId             String
+  staffId               String
+  customerId            String
+  startAt               DateTime
+  endAt                 DateTime
+  status                AppointmentStatus @default(PENDING)
+  source                AppointmentSource @default(DASHBOARD)
+  notes                 String?
+  googleCalendarEventId String?
+  managementTokenVersion Int             @default(0)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  vendor       Vendor        @relation(fields: [vendorId], references: [id])
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  service      Service       @relation(fields: [serviceId], references: [id])
+  staff        Staff         @relation(fields: [staffId], references: [id])
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  history      AppointmentHistory[]
+  notifications NotificationLog[]
+  reminderSchedules ReminderSchedule[]
+  calendarLogs CalendarSyncLog[]
+  activityNotifications ActivityNotification[]
+
+  @@index([vendorId, startAt])
+  @@index([staffId, startAt, endAt])
+}
+
+model AppointmentHistory {
+  id            String   @id @default(cuid())
+  appointmentId String
+  actorUserId   String?
+  action        String
+  oldValues     Json?
+  newValues     Json?
+  createdAt     DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model CalendarConnection {
+  id                    String   @id @default(cuid())
+  vendorId              String
+  staffId               String?
+  provider              String
+  calendarId            String   @default("primary")
+  encryptedAccessToken  String
+  encryptedRefreshToken String?
+  expiresAt             DateTime?
+  syncEnabled           Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id])
+}
+
+model MessageSetting {
+  id                         String   @id @default(cuid())
+  vendorId                   String   @unique
+  whatsappPhoneNumberId      String?
+  whatsappBusinessAccountId  String?
+  encryptedWhatsappToken     String?
+  telegramBotUsername        String?
+  encryptedTelegramToken     String?
+  staffTelegramChatId        String?
+  smsEnabled                 Boolean  @default(false)
+  smsProvider                String?
+  smsGatewayUrl              String?
+  encryptedSmsGatewayApiKey  String?
+  smsIdentifierId            String?
+  smsFrom                    String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+}
+
+model MessageTemplate {
+  id           String              @id @default(cuid())
+  vendorId     String
+  channel      NotificationChannel
+  type         String
+  templateName String?
+  subject      String?
+  body         String
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  @@unique([vendorId, channel, type])
+}
+
+model NotificationLog {
+  id                String              @id @default(cuid())
+  vendorId          String
+  appointmentId     String?
+  customerId        String?
+  channel           NotificationChannel
+  type              String
+  status            LogStatus           @default(PENDING)
+  providerMessageId String?
+  idempotencyKey    String?             @unique
+  scheduledFor      DateTime?
+  attemptCount      Int                 @default(0)
+  lastAttemptAt     DateTime?
+  errorMessage      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  vendor      Vendor       @relation(fields: [vendorId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  reminderSchedules ReminderSchedule[]
+
+  @@index([providerMessageId])
+}
+
+model ReminderSchedule {
+  id                String                 @id @default(cuid())
+  vendorId          String
+  appointmentId     String
+  notificationLogId String?
+  channel           NotificationChannel    @default(SMS)
+  type              String
+  offsetMinutes     Int
+  scheduledFor      DateTime
+  status            ReminderScheduleStatus @default(SCHEDULED)
+  jobId             String                 @unique
+  skipReason        String?
+  lastError         String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  vendor          Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  appointment     Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  notificationLog NotificationLog? @relation(fields: [notificationLogId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, scheduledFor])
+  @@index([appointmentId, status])
+}
+
+model ActivityNotification {
+  id            String   @id @default(cuid())
+  vendorId      String
+  appointmentId String?
+  type          String
+  title         String
+  message       String
+  createdAt     DateTime @default(now())
+
+  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  reads       ActivityNotificationRead[]
+
+  @@index([vendorId, createdAt])
+}
+
+model ActivityNotificationRead {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  readAt         DateTime @default(now())
+
+  notification ActivityNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt])
+}
+
+model CalendarSyncLog {
+  id            String    @id @default(cuid())
+  vendorId      String
+  appointmentId String?
+  provider      String
+  action        String
+  status        LogStatus @default(PENDING)
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+
+  vendor      Vendor       @relation(fields: [vendorId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+}
+
+model WebhookLog {
+  id        String   @id @default(cuid())
+  vendorId  String?
+  provider  String
+  eventType String
+  payload   Json
+  status    String
+  createdAt DateTime @default(now())
+
+  vendor Vendor? @relation(fields: [vendorId], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  vendorId    String?
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  vendor Vendor? @relation(fields: [vendorId], references: [id])
+  actor  User?   @relation(fields: [actorUserId], references: [id])
+}

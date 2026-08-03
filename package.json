@@ -1,0 +1,23 @@
+{
+  "name": "appointit",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server",
+    "sms-gateway",
+    "worker"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm:dev -w server\" \"npm:dev -w client\" \"npm:dev -w worker\"",
+    "serve:client": "node scripts/serve-client.js",
+    "build": "npm run build -w server && npm run build -w worker && npm run build -w sms-gateway && npm run build -w client",
+    "test": "npm test -w server && npm test -w sms-gateway",
+    "db:generate": "npm run db:generate -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:seed": "npm run db:seed -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
